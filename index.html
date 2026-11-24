@@ -1,0 +1,427 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>LINK - One Scan, Everything</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;
+ background:#f4f6fa;
+ color:#101827;
+ font-family:Arial,sans-serif;
+}
+main{
+ max-width:600px;
+ margin:auto;
+ padding:24px 18px 100px;
+}
+header{
+ font-size:36px;
+ font-weight:900;
+ letter-spacing:-2px;
+ margin-bottom:24px;
+}
+header span{color:#3975ff}
+.hero{
+ background:#101827;
+ color:white;
+ padding:28px;
+ border-radius:24px;
+}
+.hero h1{
+ font-size:29px;
+ line-height:1.4;
+}
+.hero p{color:#b5c3db}
+button{
+ border:0;
+ border-radius:14px;
+ padding:16px;
+ font-size:15px;
+ font-weight:bold;
+ cursor:pointer;
+}
+.primary{
+ background:#3975ff;
+ color:white;
+ width:100%;
+}
+.secondary{
+ background:#e9eef7;
+ color:#101827;
+ width:100%;
+ margin-top:10px;
+}
+.panel{
+ background:white;
+ padding:20px;
+ border-radius:20px;
+ margin-top:18px;
+}
+input{
+ width:100%;
+ padding:15px;
+ border:1px solid #dce1eb;
+ border-radius:12px;
+ font-size:16px;
+ margin:10px 0;
+}
+video{
+ width:100%;
+ border-radius:16px;
+ background:#111;
+}
+.grid{
+ display:grid;
+ grid-template-columns:1fr 1fr;
+ gap:10px;
+}
+nav{
+ position:fixed;
+ bottom:0;
+ left:0;
+ right:0;
+ background:white;
+ display:flex;
+ justify-content:space-around;
+ padding:12px;
+ border-top:1px solid #ddd;
+}
+nav button{
+ background:white;
+ color:#3975ff;
+}
+.item{
+ padding:14px 0;
+ border-bottom:1px solid #eee;
+ overflow-wrap:anywhere;
+}
+.small{
+ color:#687387;
+ font-size:13px;
+ line-height:1.6;
+}
+[hidden]{display:none!important}
+</style>
+</head>
+
+<body>
+<main>
+<header>LINK<span>.</span></header>
+
+<section class="hero">
+ <p>ONE SCAN, EVERYTHING.</p>
+ <h1>세상의 모든 물건을<br>이해하는 방법.</h1>
+ <p>더 많이 알고, 더 많은 일을.</p>
+ <button class="primary" onclick="startCamera()">
+ ◎ 스마트 스캔 시작
+ </button>
+</section>
+
+<section id="cameraPanel" class="panel" hidden>
+ <h2>스마트 스캔</h2>
+ <video id="video" autoplay playsinline muted></video>
+ <p id="status" class="small">
+ 제품의 모델명이나 바코드를 비춰주세요.
+ </p>
+ <button class="primary" onclick="scanText()">
+ 문자 및 모델명 인식
+ </button>
+ <button class="secondary" onclick="stopCamera()">
+ 카메라 종료
+ </button>
+</section>
+
+<section class="panel" id="searchPanel">
+ <h2>제품 정보 검색</h2>
+ <input id="model" placeholder="제품명 또는 모델명">
+ <p class="small">
+ 인식된 모델명이 정확한지 확인해주세요.
+ </p>
+ <button class="primary" onclick="searchProduct()">
+ 제품 확인
+ </button>
+</section>
+
+<section id="result" class="panel" hidden>
+ <p class="small">사용자 확인 모델명</p>
+ <h2 id="productName"></h2>
+ <p class="small">
+ 아직 공식 제품 데이터가 연결되지 않았습니다.
+ 아래 기능은 외부 검색으로 연결됩니다.
+ </p>
+
+ <div class="grid">
+  <button onclick="lookup('공식 사용 설명서')">
+   📖 사용 설명서
+  </button>
+  <button onclick="lookup('공식 고객지원')">
+   🔍 고객지원
+  </button>
+  <button onclick="lookup('공식 호환 소모품')">
+   📦 소모품
+  </button>
+  <button onclick="lookup('공식 관리 방법')">
+   ⚙️ 관리 방법
+  </button>
+ </div>
+
+ <button class="primary" style="margin-top:16px"
+ onclick="saveProduct()">
+ + 내 물건에 추가
+ </button>
+</section>
+
+<section class="panel" id="library">
+ <h2>내 물건</h2>
+ <div id="saved"></div>
+</section>
+
+<p class="small">
+ LINK v0.3 · 초기 테스트 버전<br>
+ 전기, 가스, 내부 분해 등 위험한 작업은
+ 전문가에게 문의하세요.
+</p>
+</main>
+
+<nav>
+ <button onclick="window.scrollTo(0,0)">⌂ 홈</button>
+ <button onclick="startCamera()">◎ 스캔</button>
+ <button onclick="document.getElementById('library').scrollIntoView()">
+ ▣ 내 물건
+ </button>
+</nav>
+
+<script>
+let stream = null;
+let detector = null;
+let scanning = false;
+let currentProduct = "";
+
+const video = document.getElementById("video");
+const statusText = document.getElementById("status");
+const model = document.getElementById("model");
+
+async function startCamera(){
+ if(stream) return;
+
+ try{
+  stream = await navigator.mediaDevices.getUserMedia({
+   video:{facingMode:{ideal:"environment"}},
+   audio:false
+  });
+
+  video.srcObject = stream;
+  document.getElementById("cameraPanel").hidden = false;
+  await video.play();
+
+  document.getElementById("cameraPanel").scrollIntoView({
+   behavior:"smooth"
+  });
+
+  statusText.textContent =
+   "모델명이나 바코드를 카메라에 비춰주세요.";
+
+  if("BarcodeDetector" in window){
+   try{
+    detector = new BarcodeDetector();
+    detectBarcode();
+   }catch(e){
+    detector = null;
+   }
+  }
+ }catch(e){
+  alert("카메라를 실행할 수 없습니다. HTTPS 접속과 카메라 권한을 확인해주세요.");
+ }
+}
+
+async function detectBarcode(){
+ if(!stream || !detector) return;
+
+ try{
+  if(video.readyState >= 2 && !scanning){
+   const codes = await detector.detect(video);
+
+   if(codes.length){
+    model.value = codes[0].rawValue;
+    statusText.textContent =
+     "바코드 인식 완료. 제품 모델명과 일치하는지 확인해주세요.";
+    return;
+   }
+  }
+ }catch(e){}
+
+ if(stream) setTimeout(detectBarcode,700);
+}
+
+async function scanText(){
+ if(!stream || scanning || !video.videoWidth) return;
+
+ scanning = true;
+
+ statusText.textContent =
+  "문자 분석 중입니다. 잠시 기다려주세요.";
+
+ try{
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  canvas.getContext("2d").drawImage(video,0,0);
+
+  const result = await Tesseract.recognize(
+   canvas,
+   "eng+kor",
+   {
+    logger:m=>{
+     if(m.status === "recognizing text"){
+      statusText.textContent =
+       "문자 인식 중 " +
+       Math.round(m.progress*100) + "%";
+     }
+    }
+   }
+  );
+
+  model.value = result.data.text
+   .trim()
+   .replace(/\s+/g," ");
+
+  statusText.textContent =
+   "인식 완료. 필요한 모델명만 남겨주세요.";
+
+  model.scrollIntoView({behavior:"smooth"});
+
+ }catch(e){
+  statusText.textContent =
+   "문자 인식 실패. 인터넷 연결을 확인하거나 직접 입력해주세요.";
+ }finally{
+  scanning = false;
+ }
+}
+
+function stopCamera(){
+ if(stream){
+  stream.getTracks().forEach(t=>t.stop());
+ }
+ stream = null;
+ video.srcObject = null;
+ document.getElementById("cameraPanel").hidden = true;
+}
+
+function searchProduct(){
+ const value = model.value.trim();
+
+ if(!value){
+  alert("제품명 또는 모델명을 입력해주세요.");
+  return;
+ }
+
+ currentProduct = value;
+
+ document.getElementById("productName").textContent =
+  currentProduct;
+
+ document.getElementById("result").hidden = false;
+ stopCamera();
+
+ document.getElementById("result").scrollIntoView({
+  behavior:"smooth"
+ });
+}
+
+function lookup(type){
+ if(!currentProduct) return;
+
+ window.open(
+  "https://www.google.com/search?q=" +
+  encodeURIComponent(currentProduct+" "+type),
+  "_blank",
+  "noopener,noreferrer"
+ );
+}
+
+function getProducts(){
+ try{
+  return JSON.parse(
+   localStorage.getItem("linkProducts") || "[]"
+  );
+ }catch(e){
+  return [];
+ }
+}
+
+function saveProduct(){
+ if(!currentProduct) return;
+
+ const products = getProducts();
+
+ if(!products.includes(currentProduct)){
+  products.push(currentProduct);
+  localStorage.setItem(
+   "linkProducts",
+   JSON.stringify(products)
+  );
+ }
+
+ renderProducts();
+ alert("내 물건에 저장했습니다.");
+}
+
+function removeProduct(index){
+ const products = getProducts();
+ products.splice(index,1);
+
+ localStorage.setItem(
+  "linkProducts",
+  JSON.stringify(products)
+ );
+
+ renderProducts();
+}
+
+function renderProducts(){
+ const area = document.getElementById("saved");
+ area.replaceChildren();
+
+ const products = getProducts();
+
+ if(!products.length){
+  area.textContent = "아직 등록된 물건이 없습니다.";
+  return;
+ }
+
+ products.forEach((product,index)=>{
+  const item = document.createElement("div");
+  item.className = "item";
+
+  const name = document.createElement("p");
+  name.textContent = product;
+
+  const open = document.createElement("button");
+  open.textContent = "정보 보기";
+  open.onclick = ()=>{
+   model.value = product;
+   searchProduct();
+  };
+
+  const remove = document.createElement("button");
+  remove.textContent = "삭제";
+  remove.onclick = ()=>removeProduct(index);
+
+  item.append(name,open,remove);
+  area.appendChild(item);
+ });
+}
+
+renderProducts();
+</script>
+</body>
+</html>
